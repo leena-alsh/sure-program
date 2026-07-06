@@ -1,7 +1,7 @@
 import socket
 
 # Replace with your robot's actual IP address
-ROBOT_IP = 
+ROBOT_IP = ""
 PORT =  # Primary/Real-Time interface port for UR robots
 
 
