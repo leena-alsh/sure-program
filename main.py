@@ -1,7 +1,6 @@
 import socket
 import pandas as pd
 print(pd.__version__)
-
 import time
 
 ROBOT_IP = " "
@@ -34,6 +33,7 @@ try:
             if len(coords) < 6:
                 raise ValueError("Incomplete pose data received")
             x, y, z, rx, ry, rz = coords
+        
         except ValueError as val_err:
             print(f"Skipping sample {i+1}: Could not parse response '{response}'. Error: {val_err}")
             continue
