@@ -1,0 +1,100 @@
+# blob detector test
+
+import os
+import cv2
+import numpy as np
+
+# Read and display an image with OpenCV.
+img = cv2.imread(r"D:\iki\images.png", 1)
+if img is None:
+    print("The file does not exist")
+else:
+    cv2.imshow("image", img)
+    cv2.waitKey(0)
+    cv2.destroyAllWindows()
+
+# Try a few common locations so the script can find the image on its own.
+def resolve_image_path(path):
+    for p in [path, os.path.join(os.getcwd(), path), os.path.join(os.path.dirname(os.path.abspath(__file__)), path)]:
+        if os.path.exists(p):
+            return p
+    return path
+
+# Check whether two boxes overlap enough to be treated as the same detection.
+def overlap(a, b):
+    x1, y1, x2, y2 = max(a[0], b[0]), max(a[1], b[1]), min(a[2], b[2]), min(a[3], b[3])
+    return x2 > x1 and y2 > y1 and ((x2 - x1) * (y2 - y1)) / min((a[2] - a[0]) * (a[3] - a[1]), (b[2] - b[0]) * (b[3] - b[1])) > 0.35
+
+# Keep only shapes that look roughly like a brick.
+def brick_like(c, shape):
+    a = cv2.contourArea(c)
+    if a < 250:
+        return False
+    p = cv2.arcLength(c, True)
+   
+    if p == 0:
+        return False
+    approx = cv2.approxPolyDP(c, 0.05 * p, True)
+    x, y, w, h = cv2.boundingRect(c)
+    return len(approx) in (4, 5, 6, 8) and 30 <= w and 60 <= h and 0.6 <= w / h <= 7.5 and 5 <= x < shape[1] - 5 and 5 <= y < shape[0] - 5
+
+# Main detection pipeline.
+def detect_bricks(image):
+    scaled = cv2.resize(image, None, fx=0.5, fy=0.5, interpolation=cv2.INTER_AREA)  # zoom out a bit
+    gray = cv2.GaussianBlur(cv2.cvtColor(scaled, cv2.COLOR_BGR2GRAY), (5, 5), 0)  # smooth the image
+
+    # Create several masks so the detector can work under different lighting conditions.
+    masks = [cv2.threshold(gray, 0, 255, cv2.THRESH_BINARY_INV + cv2.THRESH_OTSU)[1],
+             cv2.adaptiveThreshold(gray, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, cv2.THRESH_BINARY_INV, 31, 10)]
+    
+    masks.append(cv2.dilate(cv2.Canny(gray, 30, 100), None, iterations=1))
+
+    combined = np.zeros_like(gray)
+    for m in masks:
+        combined = cv2.bitwise_or(combined, m)  # combine the masks
+    combined = cv2.morphologyEx(combined, cv2.MORPH_OPEN, cv2.getStructuringElement(cv2.MORPH_RECT, (3, 3)))
+    combined = cv2.morphologyEx(combined, cv2.MORPH_CLOSE, cv2.getStructuringElement(cv2.MORPH_RECT, (3, 3)))
+    contours, _ = cv2.findContours(combined, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+
+    boxes = []
+    for c in contours:
+        if not brick_like(c, scaled.shape):
+            continue
+        x, y, w, h = cv2.boundingRect(c)
+        box = (x, y, x + w, y + h)
+        if not any(overlap(box, b) for b in boxes):
+            boxes.append(box)  # keep only unique detections
+    boxes.sort(key=lambda b: (b[2] - b[0]) * (b[3] - b[1]), reverse=True)
+
+    out = scaled.copy()
+    centers = []
+    for x1, y1, x2, y2 in boxes:
+        center_x = (x1 + x2) // 2
+        center_y = (y1 + y2) // 2
+        centers.append((center_x, center_y))
+        cv2.rectangle(out, (x1, y1), (x2, y2), (0, 0, 255), 6)  # red rectangle around each brick
+       # cv2.circle(out, (center_x, center_y), max(18, ((x2 - x1) + (y2 - y1)) // 4), (0, 0, 255), 2)  # red center marker
+    cv2.putText(out, f"Detected: {len(boxes)}", (70, 60), cv2.FONT_HERSHEY_SIMPLEX, 2.2, (190, 170, 255), 3)
+    return out, centers
+
+
+img = cv2.imread(resolve_image_path(r"brick.jpeg"))
+if img is None:
+    raise SystemExit("Could not load image")
+result, count = detect_bricks(img)
+print(f"Detected {count} brick-like region(s).")
+
+path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "detected_bricks.jpg")
+cv2.imwrite(path, result)
+print(f"Saved result to {path}")
+
+cv2.namedWindow("Detected Bricks", cv2.WINDOW_NORMAL)
+
+cv2.resizeWindow("Detected Bricks", 400, 600)
+
+cv2.imshow("Detected Bricks", result)
+
+cv2.waitKey(0)
+
+cv2.destroyAllWindows()
+
